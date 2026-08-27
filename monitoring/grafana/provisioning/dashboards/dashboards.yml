@@ -1,0 +1,22 @@
+---
+# Tells Grafana to load every dashboard JSON in the mounted directory.
+#
+# Provisioning rather than clicking: dashboards built in the UI live only in
+# Grafana's database and vanish when the container is recreated. Provisioned
+# ones are files in the repository — which is also exactly what the project
+# asks to be submitted.
+apiVersion: 1
+
+providers:
+  - name: weather-app
+    orgId: 1
+    folder: Weather App
+    type: file
+    disableDeletion: false
+    # Picks up edits to the JSON without a restart.
+    updateIntervalSeconds: 30
+    # Lets you experiment in the UI; changes are overwritten on reload.
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

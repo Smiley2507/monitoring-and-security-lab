@@ -1,0 +1,45 @@
+---
+# Dynamic inventory spanning BOTH stacks.
+#
+# The monitoring host is tagged Project=weather-observability by this
+# repository; the app and Jenkins hosts are tagged Project=jenkins-cicd-lab by
+# the CI/CD repository. This playbook needs all three — node_exporter goes
+# everywhere — so the filter accepts either value.
+plugin: amazon.aws.aws_ec2
+
+regions:
+  - eu-west-1
+
+profile: sandbox-user
+
+filters:
+  instance-state-name: running
+  tag:Project:
+    - weather-observability
+    - jenkins-cicd-lab
+
+hostnames:
+  - tag:Name
+
+# Ansible runs from a laptop outside the VPC, so connect over the public IP.
+# private_ip_address is still available as a hostvar, and that is what the
+# Prometheus target files use — scraping goes over private addresses.
+compose:
+  ansible_host: public_ip_address
+
+# Role tag -> group:
+#   Role=jenkins    -> role_jenkins
+#   Role=app        -> role_app
+#   Role=monitoring -> role_monitoring
+#
+# NOTE: `ec2_tags`, not `tags`. The bare `tags` hostvar is deprecated in
+# amazon.aws and is scheduled for removal after 2026-12-01.
+keyed_groups:
+  - key: ec2_tags.Role
+    prefix: role
+    separator: "_"
+
+cache: true
+cache_plugin: jsonfile
+cache_connection: ./.ansible_inventory_cache
+cache_timeout: 300

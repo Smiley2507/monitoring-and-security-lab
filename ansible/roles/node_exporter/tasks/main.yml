@@ -1,0 +1,96 @@
+---
+# node_exporter is installed as a binary with a systemd unit rather than as a
+# container.
+#
+# Why: a containerised node_exporter reports the CONTAINER's view of /proc and
+# /sys unless you mount the host filesystem and pass --path.rootfs, and even
+# then some metrics (systemd units, filesystem labels) stay wrong. A ~10 MB
+# static binary avoids the whole class of problem, and means the Jenkins host
+# does not depend on Docker for its own monitoring.
+
+- name: Create the node_exporter system user
+  ansible.builtin.user:
+    name: "{{ node_exporter_user }}"
+    system: true
+    shell: /sbin/nologin
+    create_home: false
+
+- name: Check whether the wanted version is already installed
+  ansible.builtin.command: /usr/local/bin/node_exporter --version
+  register: ne_installed
+  changed_when: false
+  failed_when: false
+
+- name: Download and unpack node_exporter
+  ansible.builtin.unarchive:
+    src: >-
+      https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
+    dest: /tmp
+    remote_src: true
+    creates: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64"
+  when: node_exporter_version not in (ne_installed.stderr | default('')) + (ne_installed.stdout | default(''))
+
+- name: Install the binary
+  ansible.builtin.copy:
+    src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+    dest: /usr/local/bin/node_exporter
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart node_exporter
+
+- name: Install the systemd unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/node_exporter.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Prometheus Node Exporter
+      Documentation=https://github.com/prometheus/node_exporter
+      After=network-online.target
+
+      [Service]
+      User={{ node_exporter_user }}
+      Group={{ node_exporter_user }}
+      Type=simple
+      # Bind to all interfaces: Prometheus scrapes over the private IP.
+      # Exposure is controlled by the security group, which only allows the
+      # VPC CIDR on this port.
+      ExecStart=/usr/local/bin/node_exporter --web.listen-address=:{{ node_exporter_port }}
+      Restart=on-failure
+      RestartSec=5
+
+      # Basic hardening: the exporter only ever reads.
+      NoNewPrivileges=true
+      ProtectHome=true
+      ProtectSystem=strict
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: Restart node_exporter
+
+- name: Enable and start node_exporter
+  ansible.builtin.systemd:
+    name: node_exporter
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Verify it is answering
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ node_exporter_port }}/metrics"
+    return_content: false
+  register: ne_check
+  retries: 5
+  delay: 3
+  until: ne_check is succeeded
+
+- name: Record the version for the tools-evidence screenshot
+  ansible.builtin.command: /usr/local/bin/node_exporter --version
+  register: ne_version
+  changed_when: false
+
+- name: Show the node_exporter version
+  ansible.builtin.debug:
+    msg: "{{ ne_version.stderr_lines[0] | default(ne_version.stdout_lines[0]) }}"

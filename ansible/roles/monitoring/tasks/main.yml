@@ -1,0 +1,198 @@
+---
+# Deploys the monitoring stack: Prometheus, Grafana, cAdvisor and an nginx
+# reverse proxy, as one compose project under {{ monitoring_dir }}.
+#
+# Config files in monitoring/ at the repository root are the single source of
+# truth. This role copies the static ones and templates the two that depend on
+# runtime facts: the compose file (needs the host's public IP) and the
+# Prometheus target files (need every host's private IP).
+
+- name: Create the monitoring directory tree
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: ec2-user
+    group: ec2-user
+    mode: "0755"
+  loop:
+    - "{{ monitoring_dir }}"
+    - "{{ monitoring_dir }}/prometheus"
+    - "{{ monitoring_dir }}/prometheus/rules"
+    - "{{ monitoring_dir }}/prometheus/targets"
+    - "{{ monitoring_dir }}/grafana"
+    - "{{ monitoring_dir }}/nginx"
+
+# --- Prometheus -------------------------------------------------------------
+
+- name: Ship the Prometheus configuration
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../monitoring/prometheus/prometheus.yml"
+    dest: "{{ monitoring_dir }}/prometheus/prometheus.yml"
+    owner: ec2-user
+    group: ec2-user
+    mode: "0644"
+  notify: Reload Prometheus
+
+- name: Ship the alert rules
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../monitoring/prometheus/rules/"
+    dest: "{{ monitoring_dir }}/prometheus/rules/"
+    owner: ec2-user
+    group: ec2-user
+    mode: "0644"
+  notify: Reload Prometheus
+
+# The addresses, generated from the dynamic inventory. Prometheus watches this
+# directory and re-reads it automatically — no restart, no reload. Rebuild the
+# infrastructure and a single playbook run points it at the new IPs.
+- name: Generate the Prometheus target files from inventory
+  ansible.builtin.template:
+    src: "targets/{{ item }}.json.j2"
+    dest: "{{ monitoring_dir }}/prometheus/targets/{{ item }}.json"
+    owner: ec2-user
+    group: ec2-user
+    mode: "0644"
+  loop:
+    - node
+    - weather-app
+    - cadvisor
+    - nginx
+    - jenkins
+
+# --- Grafana ----------------------------------------------------------------
+
+- name: Ship the Grafana provisioning tree
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../monitoring/grafana/provisioning/"
+    dest: "{{ monitoring_dir }}/grafana/provisioning/"
+    owner: ec2-user
+    group: ec2-user
+    mode: "0644"
+    directory_mode: "0755"
+
+# --- nginx ------------------------------------------------------------------
+
+- name: Template the reverse proxy configuration
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../monitoring/nginx/monitoring.conf.j2"
+    dest: "{{ monitoring_dir }}/nginx/monitoring.conf"
+    owner: ec2-user
+    group: ec2-user
+    mode: "0644"
+  notify: Reload monitoring nginx
+
+# openssl rather than the htpasswd module, which needs passlib on the target.
+# `creates:` makes it idempotent — the apr1 salt is random, so re-running would
+# otherwise rewrite the file and restart nginx on every play.
+- name: Generate the basic-auth file for Prometheus
+  ansible.builtin.shell:
+    cmd: >-
+      printf '%s:%s\n'
+      '{{ prometheus_basic_auth_user }}'
+      "$(openssl passwd -apr1 '{{ prometheus_basic_auth_password }}')"
+      > {{ monitoring_dir }}/nginx/.htpasswd
+    creates: "{{ monitoring_dir }}/nginx/.htpasswd"
+  no_log: true
+
+- name: Secure the basic-auth file
+  ansible.builtin.file:
+    path: "{{ monitoring_dir }}/nginx/.htpasswd"
+    owner: ec2-user
+    group: ec2-user
+    mode: "0644"
+
+# --- the stack --------------------------------------------------------------
+
+- name: Template the compose file
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../monitoring/docker-compose.yml.j2"
+    dest: "{{ monitoring_dir }}/docker-compose.yml"
+    owner: ec2-user
+    group: ec2-user
+    mode: "0644"
+  register: monitoring_compose
+
+- name: Pull images
+  ansible.builtin.command:
+    cmd: docker compose pull
+    chdir: "{{ monitoring_dir }}"
+  changed_when: false
+
+- name: Start the monitoring stack
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ monitoring_dir }}"
+  changed_when: true
+
+# --- verification -----------------------------------------------------------
+
+- name: Wait for Prometheus to be ready
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8090/-/ready
+    user: "{{ prometheus_basic_auth_user }}"
+    password: "{{ prometheus_basic_auth_password }}"
+    force_basic_auth: true
+    status_code: [200]
+    timeout: 10
+  register: prom_ready
+  retries: 20
+  delay: 5
+  until: prom_ready is succeeded
+
+- name: Wait for Grafana to be ready
+  ansible.builtin.uri:
+    url: http://127.0.0.1/api/health
+    status_code: [200]
+    timeout: 10
+  register: grafana_ready
+  retries: 20
+  delay: 5
+  until: grafana_ready is succeeded
+
+# The single most useful check in this role: it reports how many scrape targets
+# are actually UP. A target that is DOWN is almost always a security group.
+- name: Ask Prometheus how many targets are up
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8090/api/v1/query?query=sum(up)
+    user: "{{ prometheus_basic_auth_user }}"
+    password: "{{ prometheus_basic_auth_password }}"
+    force_basic_auth: true
+    return_content: true
+    timeout: 10
+  register: targets_up
+  retries: 5
+  delay: 10
+  until: targets_up is succeeded
+
+- name: Report scrape health
+  ansible.builtin.debug:
+    msg: >-
+      Targets currently UP:
+      {{ targets_up.json.data.result[0].value[1] | default('0') }}.
+      Full detail at http://{{ ansible_host }}:8090/targets
+
+- name: Record versions for the tools-evidence screenshot
+  ansible.builtin.shell: |
+    set -o pipefail
+    echo "--- prometheus ---"; docker exec prometheus prometheus --version 2>&1 | head -1
+    echo "--- grafana ---";    docker exec grafana grafana server -v 2>&1 | head -1
+    echo "--- cadvisor ---";   docker inspect --format '{{ '{{' }}.Config.Image{{ '}}' }}' cadvisor
+    echo "--- docker ---";     docker --version
+    echo "--- compose ---";    docker compose version
+    echo "--- os ---";         head -2 /etc/os-release
+  args:
+    executable: /bin/bash
+  register: tool_versions
+  changed_when: false
+
+- name: Print tool versions
+  ansible.builtin.debug:
+    msg: "{{ tool_versions.stdout_lines }}"
+
+- name: Print the access URLs
+  ansible.builtin.debug:
+    msg:
+      - "Grafana:    http://{{ ansible_host }}/  (login {{ grafana_admin_user }})"
+      - "Prometheus: http://{{ ansible_host }}:8090/  (basic auth {{ prometheus_basic_auth_user }})"
+      - "Alerts:     http://{{ ansible_host }}:8090/alerts"
+      - "Targets:    http://{{ ansible_host }}:8090/targets"

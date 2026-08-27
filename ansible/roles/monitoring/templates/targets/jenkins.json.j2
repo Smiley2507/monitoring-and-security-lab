@@ -1,0 +1,11 @@
+[
+  {% for host in groups['role_jenkins'] | default([]) %}
+  {
+    "targets": ["{{ hostvars[host].private_ip_address }}:8080"],
+    "labels": {
+      "instance": "{{ host }}",
+      "service": "jenkins"
+    }
+  }{{ "," if not loop.last }}
+  {% endfor %}
+]

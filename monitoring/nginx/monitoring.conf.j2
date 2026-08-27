@@ -1,0 +1,68 @@
+# {{ ansible_managed }}
+#
+# Two server blocks on two ports rather than URL sub-paths. Prometheus and
+# Grafana both need extra configuration to be served under a prefix, and both
+# break in subtle ways when it is slightly wrong. Root-of-its-own-port is
+# simpler and has fewer failure modes.
+#
+# Neither backend port (9090, 3000) is published to the host or opened in the
+# security group — nginx reaches them over the Docker network.
+
+# --- Grafana ---------------------------------------------------------------
+# Port 80. No basic auth here: Grafana has its own login, and stacking basic
+# auth on top of it just means typing two passwords.
+server {
+    listen 80;
+    server_name _;
+    server_tokens off;
+
+    access_log /var/log/nginx/grafana_access.log;
+    error_log  /var/log/nginx/grafana_error.log warn;
+
+    location / {
+        proxy_pass http://grafana:3000;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Grafana's Live features use websockets; without these the UI works
+        # but panels do not stream.
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_read_timeout 60s;
+    }
+}
+
+# --- Prometheus ------------------------------------------------------------
+# Port 8090, behind HTTP basic auth.
+#
+# This is the important one: Prometheus has NO authentication of its own.
+# Anyone who can reach 9090 can read every metric, query the API, and see the
+# whole target list. The security group restricts the source address and this
+# block requires a password — defence in depth, because a security group is one
+# `terraform apply` away from being wrong.
+server {
+    listen 8090;
+    server_name _;
+    server_tokens off;
+
+    access_log /var/log/nginx/prometheus_access.log;
+    error_log  /var/log/nginx/prometheus_error.log warn;
+
+    location / {
+        auth_basic           "Prometheus";
+        auth_basic_user_file /etc/nginx/conf.d/.htpasswd;
+
+        proxy_pass http://prometheus:9090;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

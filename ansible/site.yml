@@ -1,0 +1,23 @@
+---
+# Play 1 — every host gets host-level metrics.
+- name: Install node_exporter on all managed hosts
+  hosts: all
+  become: true
+  gather_facts: true
+  roles:
+    - node_exporter
+
+# Play 2 — the app server also exposes container and nginx metrics.
+- name: Deploy exporters on the application server
+  hosts: role_app
+  become: true
+  roles:
+    - app_exporters
+
+# Play 3 — the monitoring stack itself.
+- name: Deploy Prometheus, Grafana and the reverse proxy
+  hosts: role_monitoring
+  become: true
+  roles:
+    - docker
+    - monitoring

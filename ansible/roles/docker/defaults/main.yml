@@ -1,0 +1,4 @@
+# Role default, so the role works even if the playbook does not define it.
+# group_vars/all.yml overrides this — role defaults are the lowest precedence
+# of any variable source.
+docker_compose_version: "v2.32.4"

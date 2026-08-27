@@ -1,0 +1,71 @@
+---
+# The monitoring host is created by this repository, so nothing has installed
+# Docker on it. The app and Jenkins hosts already have Docker from the CI/CD
+# repository's `common` role — this role is idempotent, so running it against
+# them would be harmless, but site.yml only applies it where it is needed.
+
+- name: Update all packages
+  ansible.builtin.dnf:
+    name: "*"
+    state: latest
+    update_cache: true
+  register: dnf_update
+  retries: 3
+  delay: 10
+  until: dnf_update is succeeded
+
+# NOTE: do NOT add `curl` here. Amazon Linux 2023 ships `curl-minimal`, which
+# already provides /usr/bin/curl. Requesting `curl` forces dnf to erase
+# curl-minimal, which it refuses to do implicitly, producing a several-hundred
+# line depsolve error.
+- name: Install baseline packages
+  ansible.builtin.dnf:
+    name:
+      - git
+      - tar
+      - unzip
+      - jq
+    state: present
+
+- name: Install the Docker engine
+  ansible.builtin.dnf:
+    name: docker
+    state: present
+
+- name: Enable and start Docker
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Ensure the Docker CLI plugin directory exists
+  ansible.builtin.file:
+    path: /usr/libexec/docker/cli-plugins
+    state: directory
+    mode: "0755"
+
+# AL2023 ships the Docker engine but not the Compose v2 plugin, so it comes
+# from the upstream release rather than from dnf.
+- name: Install the Docker Compose v2 plugin
+  ansible.builtin.get_url:
+    url: >-
+      https://github.com/docker/compose/releases/download/{{ docker_compose_version }}/docker-compose-linux-x86_64
+    dest: /usr/libexec/docker/cli-plugins/docker-compose
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Verify Compose is callable as a docker subcommand
+  ansible.builtin.command: docker compose version
+  register: compose_version
+  changed_when: false
+
+- name: Report the Compose version
+  ansible.builtin.debug:
+    msg: "{{ compose_version.stdout }}"
+
+- name: Add ec2-user to the docker group
+  ansible.builtin.user:
+    name: ec2-user
+    groups: docker
+    append: true

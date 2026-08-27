@@ -1,0 +1,11 @@
+[
+  {% for host in (groups['role_monitoring'] | default([])) + (groups['role_app'] | default([])) + (groups['role_jenkins'] | default([])) %}
+  {
+    "targets": ["{{ hostvars[host].private_ip_address }}:9100"],
+    "labels": {
+      "instance": "{{ host }}",
+      "role": "{{ hostvars[host].ec2_tags.Role | default('unknown') }}"
+    }
+  }{{ "," if not loop.last }}
+  {% endfor %}
+]

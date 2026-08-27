@@ -1,0 +1,59 @@
+---
+# Two extra exporters on the application server, deployed as their own small
+# compose project so the weather-app stack (managed by the CI/CD repository) is
+# never touched by this one.
+#
+#   cAdvisor        per-container CPU, memory, network and filesystem
+#   nginx-exporter  connection and request counters from nginx stub_status
+
+- name: Create the agents directory
+  ansible.builtin.file:
+    path: "{{ agents_dir }}"
+    state: directory
+    owner: ec2-user
+    group: ec2-user
+    mode: "0755"
+
+- name: Template the exporter compose file
+  ansible.builtin.template:
+    src: docker-compose.agents.yml.j2
+    dest: "{{ agents_dir }}/docker-compose.yml"
+    owner: ec2-user
+    group: ec2-user
+    mode: "0644"
+  register: agents_compose
+
+- name: Start the exporters
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ agents_dir }}"
+  changed_when: agents_compose.changed
+
+- name: Wait for cAdvisor
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:8080/metrics"
+    return_content: false
+  register: cadvisor_check
+  retries: 10
+  delay: 5
+  until: cadvisor_check is succeeded
+
+# nginx-exporter runs with network_mode: host and scrapes 127.0.0.1, so the
+# stub_status allow-list in the app's nginx config sees a loopback client.
+- name: Wait for nginx-exporter
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9113/metrics"
+    return_content: false
+  register: nginx_exp_check
+  retries: 10
+  delay: 5
+  until: nginx_exp_check is succeeded
+  failed_when: false
+
+- name: Warn if nginx-exporter is not healthy
+  ansible.builtin.debug:
+    msg: >-
+      nginx-exporter is not answering. The usual cause is a missing
+      /stub_status block in the weather-app nginx config, or an allow-list that
+      does not include 127.0.0.1.
+  when: nginx_exp_check is failed

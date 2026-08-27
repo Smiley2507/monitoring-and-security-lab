@@ -1,0 +1,6 @@
+---
+# Overridden by group_vars/all.yml; listed here so the role is self-describing.
+monitoring_dir: /opt/monitoring
+scrape_interval: 15s
+grafana_admin_user: admin
+prometheus_basic_auth_user: prom

@@ -1,0 +1,158 @@
+# Alert rules.
+#
+# Prometheus evaluates these every `evaluation_interval` (15s). A rule whose
+# expression returns any series enters PENDING, and becomes FIRING once the
+# expression has held true for `for:`. Both states are visible at
+# http://<monitoring-host>:8090/alerts — which is the screenshot to capture.
+#
+# `for:` is what stops a single bad scrape paging you. It is the difference
+# between "one request failed" and "this has been broken for two minutes".
+
+groups:
+  # ==========================================================================
+  # The application
+  # ==========================================================================
+  - name: weather-app
+    rules:
+      # The project's headline requirement: alert when the error rate exceeds
+      # 5%.
+      #
+      # Error rate is NOT reported by the app. The app exposes a counter of
+      # requests labelled by status; Prometheus computes the ratio at query
+      # time. rate() gives per-second increase over the window, so this is
+      # "5xx per second divided by all requests per second".
+      #
+      # The second clause is the important one: with no traffic both sides are
+      # zero and the division is NaN. Requiring a minimum request rate means
+      # the alert describes a real user-facing problem rather than an idle
+      # server.
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(flask_http_request_total{status=~"5.."}[5m]))
+            /
+            sum(rate(flask_http_request_total[5m]))
+          ) > 0.05
+          and
+          sum(rate(flask_http_request_total[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          service: weather-app
+        annotations:
+          summary: "Error rate above 5% on the weather app"
+          description: >-
+            {{ $value | humanizePercentage }} of requests returned 5xx over the
+            last 5 minutes. Check the app container:
+            `cd /opt/weather-app && docker compose logs web --tail 50`.
+
+      # p95 latency. The average would hide this: 99 fast requests and one very
+      # slow one average out to something that looks fine, while a real user
+      # waited 10 seconds.
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(flask_http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: weather-app
+        annotations:
+          summary: "95th percentile latency above 1 second"
+          description: >-
+            p95 is {{ $value | humanizeDuration }}. The usual cause is the
+            upstream Open-Meteo API being slow; the app has a 5s timeout.
+
+      # "Is it alive" is itself a metric. When a scrape fails, Prometheus
+      # records up=0 for that target.
+      - alert: AppDown
+        expr: up{job="weather-app"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: weather-app
+        annotations:
+          summary: "The weather app is not answering scrapes"
+          description: >-
+            Prometheus cannot reach {{ $labels.instance }}/metrics. Either the
+            container is down, nginx is down, or the security group changed.
+
+  # ==========================================================================
+  # Hosts
+  # ==========================================================================
+  - name: hosts
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} target {{ $labels.instance }} is down"
+          description: "Prometheus has failed to scrape this target for 2 minutes."
+
+      # 100 minus the idle rate. Averaged across cores, so a single busy core
+      # on a 2-core box reads as ~50%.
+      - alert: HighCpuUsage
+        expr: |
+          100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU above 85% on {{ $labels.instance }}"
+          description: "CPU has averaged {{ $value | printf \"%.1f\" }}% for 5 minutes."
+
+      # MemAvailable, not MemFree: Linux uses free memory for page cache, and
+      # that cache is reclaimable. MemFree alone would alert constantly on a
+      # perfectly healthy host.
+      - alert: HighMemoryUsage
+        expr: |
+          100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memory above 85% on {{ $labels.instance }}"
+          description: "{{ $value | printf \"%.1f\" }}% of RAM is in use."
+
+      - alert: LowDiskSpace
+        expr: |
+          100 * (1 - node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}
+                     / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Root filesystem above 80% on {{ $labels.instance }}"
+          description: >-
+            {{ $value | printf "%.1f" }}% used. On the Jenkins host this is
+            usually accumulated Docker images.
+
+      # Catches the classic "it rebooted and nobody noticed".
+      - alert: HostRebooted
+        expr: node_time_seconds - node_boot_time_seconds < 300
+        for: 0m
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.instance }} rebooted recently"
+          description: "Uptime is under 5 minutes."
+
+  # ==========================================================================
+  # Containers
+  # ==========================================================================
+  - name: containers
+    rules:
+      # A container restarting repeatedly usually means it is crash-looping.
+      - alert: ContainerRestarting
+        expr: |
+          rate(container_start_time_seconds{name!=""}[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} is restarting repeatedly"
+          description: "Check `docker logs {{ $labels.name }}` on {{ $labels.instance }}."
