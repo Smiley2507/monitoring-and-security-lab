@@ -51,3 +51,8 @@ output "guardduty_detector_id" {
   description = "Detector ID — needed for `aws guardduty create-sample-findings`"
   value       = aws_guardduty_detector.main.id
 }
+
+output "log_groups" {
+  description = "CloudWatch log groups receiving container and Jenkins logs"
+  value       = [for g in aws_cloudwatch_log_group.app : g.name]
+}
