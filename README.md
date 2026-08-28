@@ -50,7 +50,7 @@ if it wasn't?"*
 ### Alert rules
 
 Nine rules in three groups. The one the project requires is **HighErrorRate** —
-5xx responses above 5% of traffic, sustained for 5 minutes.
+5xx responses above 5% of traffic, sustained for 2 minutes.
 
 | Group | Rules |
 |-------|-------|
@@ -121,12 +121,17 @@ log output.
 
 ```bash
 cd ../ansible
+mkdir -p group_vars/all
 echo 'alertmanager_discord_webhook: "https://discord.com/api/webhooks/..."' \
-  > group_vars/secrets.yml
+  > group_vars/all/secrets.yml
 ```
 
-`group_vars/secrets.yml` is gitignored. Group vars merge alphabetically, so it
-overrides the `CHANGE-ME` placeholder in `all.yml`.
+`group_vars` files are named after **inventory groups**, not merged by filename.
+A file called `group_vars/secrets.yml` is loaded only if a group named `secrets`
+exists — otherwise Ansible ignores it silently and the `CHANGE-ME` placeholder
+reaches the host. Making `all` a directory means every file inside it loads for
+every host, so `all/main.yml` holds the committed defaults and
+`all/secrets.yml` (gitignored) holds the webhook.
 
 ### 3. Configuration
 
@@ -175,9 +180,8 @@ Both ports are restricted to the operator's IP by security group.
 ## Evidence
 
 Screenshots proving the monitoring path works end to end, walked in the order
-data actually flows: metrics get collected, dashboards render them, alert
-rules evaluate them and notify, and everything is separately logged and
-audited.
+data actually flows: metrics get collected, dashboards render them, alert rules
+evaluate them and notify, and everything is separately logged and audited.
 
 ### 1. Metrics are being collected
 
@@ -191,12 +195,6 @@ scrape path works end to end — security groups, exporters, and the app's own
 
 A PromQL query graphing request rate by HTTP status. The visible 200, 400 and
 404 series confirm that application metrics aren't just scraped but queryable.
-
-> **Not yet captured:** the app's `/metrics` endpoint in raw Prometheus text
-> format. Worth noting for whoever takes it — it returns **403** when curled
-> from the app server itself. That's expected: nginx only allows the VPC CIDR,
-> and Docker's NAT rewrites host-local traffic to a bridge address. Scrape
-> from the monitoring host instead.
 
 ### 2. Dashboards visualize them
 
@@ -218,9 +216,13 @@ not just in Prometheus's own `/targets` page.
 
 ![Latency percentiles](screenshots/grafana-latency.png)
 
-p50/p95/p99 latency, broken down by request path — including some paths the
-weather app never defined (see [Real-world observation](#7-real-world-observation)
-below).
+p50/p95/p99 latency broken down by request path. Several of the paths visible
+here were never defined by the weather app — `/.aws/credentials`,
+`/.bash_history`, `/.env` and similar. That is automated internet
+reconnaissance probing a publicly reachable host for leaked secrets. All of it
+returned 404. This traffic was not staged; it is what any public host receives
+within hours, and it is the clearest practical argument for why the security
+half of this project exists.
 
 ![Grafana data source](screenshots/grafana-data-sources.png)
 
@@ -231,34 +233,35 @@ Grafana's Prometheus data source, provisioned rather than clicked in.
 ![Alert rules](screenshots/prom-rules.png)
 
 All nine rules loaded, including the one the project requires,
-`HighErrorRate` (5xx above 5% of traffic, sustained 5 minutes).
+`HighErrorRate` (5xx above 5% of traffic, sustained 2 minutes).
 
 ![Prometheus alert groups](screenshots/prom-alerts.png)
 
-The alert groups registered in Prometheus, inactive here because no test load
-was running at capture time — Prometheus decides *when* an alert fires.
+The alert groups registered in Prometheus. Prometheus decides *when* an alert
+fires; Alertmanager decides *who* is told and *how*.
+
+![Alert firing](screenshots/alert-firing.png)
+
+`TargetDown` actually reaching `FIRING (1)` after one of the exporters stopped
+responding — proof the evaluation path works end to end, not just that the
+rules parse. `HighErrorRate` runs through the same mechanism with a different
+expression.
 
 ### 4. ...and notify Discord
 
 ![Discord alert notification](screenshots/discord-notification.png)
 
-Alertmanager decides *who and how*: a test alert routed through Alertmanager
-and posted to the `#alerts` Discord channel, with severity and instance labels
-intact. This confirms the notification path itself — webhook, route and
-template — independent of any specific rule firing.
-
-> **Not yet captured:** `HighErrorRate` visibly `FIRING` in the Prometheus
-> `/alerts` page under real test load, paired with the Discord message it
-> produces. The screenshot above proves the route works; this would prove the
-> rule triggers it.
+The alert arriving in the `#alerts` Discord channel with its severity and
+instance labels intact. This closes the chain: rule evaluated in Prometheus,
+grouped and routed by Alertmanager, delivered to a human.
 
 ### 5. Logs
 
 ![CloudWatch log groups](screenshots/cloudwatch-log-groups.png)
 
 Seven log groups, each with an explicit 14-day retention policy declared in
-Terraform — not auto-created by the Docker driver, which would keep (and
-bill for) the data forever.
+Terraform — not auto-created by the Docker driver, which would keep (and bill
+for) the data forever.
 
 ![CloudWatch application logs](screenshots/cloudwatch-app-logs.png)
 
@@ -283,26 +286,51 @@ GuardDuty enabled, with sample findings generated deliberately via
 account was not actually attacked. They exist to exercise the detection and
 display path end to end without waiting for a real incident.
 
-### 7. Real-world observation
-
-> **Not yet captured:** a Grafana latency panel showing unsolicited internet
-> reconnaissance against the public app — automated scanners probing for
-> `/.aws/credentials`, `/.bash_history`, `/.env` and similar paths the weather
-> app never defined. All returned 404. This traffic isn't staged; it's what
-> a publicly reachable host receives within hours, and it's the clearest
-> argument for why the security half of this project exists.
-
 ---
 
 ## Repository layout
 
 ```
-terraform/    monitoring host, IAM, CloudTrail + S3, GuardDuty, CloudWatch groups
-ansible/      roles: docker, node_exporter, app_exporters, monitoring
-monitoring/   prometheus.yml, alert rules, Alertmanager config,
-              Grafana provisioning, compose file
-screenshots/  evidence
-monitoring-lab-architecture.png   architecture diagram (see Architecture)
+monitoring-and-security-lab/
+├── terraform/
+│   ├── monitoring.tf            # monitoring EC2 instance + security group
+│   ├── iam.tf                   # instance profile for CloudWatch access
+│   ├── cloudtrail.tf            # multi-region trail + S3 bucket
+│   ├── guardduty.tf             # detector
+│   ├── cloudwatch.tf            # log groups, 14-day retention
+│   ├── data.tf                  # looks up the existing VPC/subnets by tag
+│   ├── outputs.tf
+│   └── terraform.tfvars         # gitignored — your admin CIDR
+├── ansible/
+│   ├── site.yml                 # entrypoint: 3 plays
+│   ├── inventory.aws_ec2.yml    # EC2 dynamic inventory, grouped by Role tag
+│   ├── group_vars/
+│   │   └── all/
+│   │       ├── main.yml         # committed defaults (CHANGE-ME placeholder)
+│   │       └── secrets.yml      # gitignored — Discord webhook
+│   └── roles/
+│       ├── docker/
+│       ├── node_exporter/       # installed on all 3 hosts
+│       ├── app_exporters/       # cAdvisor + nginx-exporter on the app server
+│       └── monitoring/          # Prometheus, Grafana, Alertmanager, cAdvisor
+├── monitoring/                  # source of truth — Ansible copies this, nothing is hand-configured
+│   ├── docker-compose.yml.j2
+│   ├── prometheus/
+│   │   ├── prometheus.yml
+│   │   └── rules/alerts.yml
+│   ├── alertmanager/
+│   │   └── alertmanager.yml.j2
+│   ├── grafana/provisioning/
+│   │   ├── datasources/prometheus.yml
+│   │   └── dashboards/
+│   │       ├── dashboards.yml
+│   │       └── weather-app-observability.json
+│   └── nginx/monitoring.conf.j2
+├── screenshots/                 # evidence referenced above
+├── docs/
+│   └── REPORT.md
+├── monitoring-lab-architecture.png
+└── README.md
 ```
 
 Everything under `monitoring/` is the source of truth. Ansible copies it to the
@@ -317,6 +345,13 @@ need extra configuration to serve under a prefix, and both fail in confusing
 ways when it is slightly wrong. Serving each at the root of its own port avoids
 the problem entirely.
 
+**`/metrics` restricted to the VPC, not the internet.** The app's nginx allows
+`/metrics` only from the VPC CIDR, so Prometheus can scrape it and nobody else
+can. A side effect worth knowing: curling it *from the app server itself*
+returns **403**, because Docker's NAT rewrites host-local traffic to a bridge
+address that isn't in the allowed range. That is the allow-list working, not a
+fault — test from the monitoring host instead.
+
 **IAM instance profile, not access keys.** Both hosts assume a role for
 CloudWatch access. No long-lived credentials exist anywhere in this repo or on
 any instance.
@@ -326,6 +361,12 @@ file's *inode*. Ansible writes a temp file and renames it into place, creating a
 new inode — so the container keeps serving the old content and a reload re-reads
 a file that no longer exists. Mounting the directory makes Docker resolve the
 path on each open.
+
+**File modes account for container UIDs.** Containers share the host's numeric
+UID namespace but not its user names. nginx workers run as UID 101 and
+Alertmanager as UID 65534, so a config file at mode 0640 owned by `ec2-user`
+is unreadable to them — nginx answers 500 and Alertmanager crash-loops. Config
+files that containers read are mode 0644.
 
 **Dashboards provisioned from JSON.** Saving a dashboard in the Grafana UI
 creates drift that disappears the next time the container is recreated. The JSON
