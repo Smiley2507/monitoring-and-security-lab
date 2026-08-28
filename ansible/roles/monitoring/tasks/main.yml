@@ -21,6 +21,7 @@
     - "{{ monitoring_dir }}/prometheus/targets"
     - "{{ monitoring_dir }}/grafana"
     - "{{ monitoring_dir }}/nginx"
+    - "{{ monitoring_dir }}/alertmanager"
 
 # --- Prometheus -------------------------------------------------------------
 
@@ -101,6 +102,15 @@
     group: ec2-user
     mode: "0644"
 
+- name: Template the Alertmanager configuration
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../monitoring/alertmanager/alertmanager.yml.j2"
+    dest: "{{ monitoring_dir }}/alertmanager/alertmanager.yml"
+    owner: ec2-user
+    group: ec2-user
+    mode: "0644"
+  # Contains the Discord webhook token — keep it out of the run output.
+  no_log: true
 # --- the stack --------------------------------------------------------------
 
 - name: Template the compose file

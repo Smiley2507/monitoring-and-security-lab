@@ -99,8 +99,32 @@ services:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}
 
+  alertmanager:
+    image: {{ alertmanager_image }}
+    container_name: alertmanager
+    restart: unless-stopped
+    # Not published. Prometheus reaches it over the compose network; there is
+    # no reason to expose the silencing UI to the internet.
+    expose:
+      - "9093"
+    volumes:
+      # Directory mount, for the same inode reason as Prometheus above.
+      - ./alertmanager:/etc/alertmanager:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: {{ aws_region }}
+        awslogs-group: /monitoring/alertmanager
+        awslogs-stream: alertmanager
+        awslogs-create-group: "true"
+
 volumes:
   # Named volumes, because without them Prometheus loses every sample and
   # Grafana loses its database whenever a container is recreated.
   prometheus_data:
   grafana_data:
+  alertmanager_data:

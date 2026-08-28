@@ -33,3 +33,10 @@ scrape_interval: 15s
 
 # --- CloudWatch logs --------------------------------------------------------
 aws_region: eu-west-1
+
+## --- Discord webhook for Alertmanager ---------------------------------------
+# The webhook URL contains a token that grants the ability to post to the
+# channel, so it is treated as a credential: kept in an untracked secrets file,
+# and this task runs with no_log.
+alertmanager_image: "prom/alertmanager:v0.28.0"
+alertmanager_discord_webhook: "CHANGE-ME"

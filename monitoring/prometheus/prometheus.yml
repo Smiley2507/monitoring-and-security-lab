@@ -21,12 +21,18 @@ global:
     monitor: weather-app-observability
     region: eu-west-1
 
-# Alert rules. Prometheus evaluates these itself and shows PENDING/FIRING in
-# its own Alerts tab, so the >5% error-rate alert is demonstrable without
-# running Alertmanager. Alertmanager is what would route a firing alert to
-# email or Slack — deliberately out of scope here; Grafana handles notification.
+# its own Alerts tab. Prometheus decides WHEN an alert fires; Alertmanager,
+# configured below, decides who is notified and how.
 rule_files:
   - /etc/prometheus/rules/*.yml
+
+# Where to send firing alerts. Prometheus pushes to Alertmanager — note this is
+# the one place the pull model is reversed, because an alert is an event rather
+# than a sample. Reached over the compose network, so no port is published.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
 
 scrape_configs:
   # --- Prometheus itself ----------------------------------------------------

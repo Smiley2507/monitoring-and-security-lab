@@ -4,3 +4,4 @@
 terraform.tfvars
 *.pem
 crash.log
+ansible/group_vars/secrets.yml

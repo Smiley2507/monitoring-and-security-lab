@@ -6,3 +6,4 @@ terraform.tfvars
 *.retry
 .ansible_inventory_cache/
 __pycache__/
+ansible/group_vars/all/secrets.yml
