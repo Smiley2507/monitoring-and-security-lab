@@ -251,9 +251,7 @@ expression.
 
 ![Discord alert notification](screenshots/discord-notification.png)
 
-The alert arriving in the `#alerts` Discord channel with its severity and
-instance labels intact. This closes the chain: rule evaluated in Prometheus,
-grouped and routed by Alertmanager, delivered to a human.
+Alerts arriving in the `#alerts` Discord channel with severity and instance labels intact, and the matching RESOLVED notification once the service recovered. This closes the chain: rule evaluated in Prometheus, grouped and routed by Alertmanager, delivered to a human, and cleared automatically when the condition ended.
 
 ### 5. Logs
 
