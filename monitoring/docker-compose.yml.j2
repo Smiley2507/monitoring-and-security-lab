@@ -7,8 +7,8 @@ services:
     container_name: prometheus
     restart: unless-stopped
     # NOT published to the host. nginx reaches it over this network.
-    expose:
-      - "9090"
+    ports:
+      - "9090:9090"
     volumes:
       - ./prometheus:/etc/prometheus:ro
       - prometheus_data:/prometheus
@@ -19,7 +19,7 @@ services:
       - --storage.tsdb.retention.time=15d
       # Absolute URL so links in the UI and in alerts point at the proxy
       # rather than at the unreachable container port.
-      - --web.external-url=http://{{ ansible_host }}:8090/
+      - --web.external-url=http://{{ ansible_host }}:9090/
       # Lets `curl -X POST /-/reload` apply config changes without a restart.
       - --web.enable-lifecycle
     logging:
@@ -34,16 +34,15 @@ services:
     image: {{ grafana_image }}
     container_name: grafana
     restart: unless-stopped
-    expose:
-      - "3000"
+    ports:
+      - "3000:3000"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana_data:/var/lib/grafana
     environment:
       GF_SECURITY_ADMIN_USER: "{{ grafana_admin_user }}"
       GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
-      # Served at the root of port 80 through nginx.
-      GF_SERVER_ROOT_URL: "http://{{ ansible_host }}/"
+      GF_SERVER_ROOT_URL: "http://{{ ansible_host }}:3000/"
       # Nobody should be able to create an account on a monitoring server.
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
@@ -57,25 +56,6 @@ services:
         awslogs-stream: grafana
         awslogs-create-group: "true"
 
-  nginx:
-    image: {{ nginx_image }}
-    container_name: monitoring-nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"      # -> Grafana
-      - "8090:8090"  # -> Prometheus, basic auth
-    volumes:
-      - ./nginx:/etc/nginx/conf.d:ro
-    depends_on:
-      - prometheus
-      - grafana
-    logging:
-      driver: awslogs
-      options:
-        awslogs-region: {{ aws_region }}
-        awslogs-group: /monitoring/nginx
-        awslogs-stream: nginx
-        awslogs-create-group: "true"
   alertmanager:
     image: {{ alertmanager_image }}
     container_name: alertmanager

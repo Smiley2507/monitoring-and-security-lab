@@ -9,8 +9,6 @@ node_exporter_version: "1.8.2"
 docker_compose_version: "v2.32.4"
 prometheus_image: "prom/prometheus:v3.1.0"
 grafana_image: "grafana/grafana:11.5.1"
-nginx_image: "nginx:1.27-alpine"
-
 # --- monitoring host layout -------------------------------------------------
 monitoring_dir: /opt/monitoring
 
@@ -19,11 +17,6 @@ monitoring_dir: /opt/monitoring
 #   ansible-vault encrypt_string 'realpassword' --name 'grafana_admin_password'
 grafana_admin_user: admin
 grafana_admin_password: "changeme-grafana"
-
-# HTTP basic auth in front of Prometheus, which has no authentication of
-# its own.
-prometheus_basic_auth_user: prom
-prometheus_basic_auth_password: "changeme-prometheus"
 
 # --- scraping ---------------------------------------------------------------
 scrape_interval: 15s

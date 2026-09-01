@@ -1,19 +1,8 @@
 ---
-# Prometheus re-reads its config on SIGHUP via the lifecycle API, so a config
-# change does not need a container restart (which would pause scraping).
 - name: Reload Prometheus
   ansible.builtin.uri:
-    url: http://127.0.0.1:8090/-/reload
+    url: http://127.0.0.1:9090/-/reload
     method: POST
-    user: "{{ prometheus_basic_auth_user }}"
-    password: "{{ prometheus_basic_auth_password }}"
-    force_basic_auth: true
     status_code: [200, 204]
-  failed_when: false
-  changed_when: true
-
-- name: Reload monitoring nginx
-  ansible.builtin.command:
-    cmd: docker exec monitoring-nginx nginx -s reload
   failed_when: false
   changed_when: true
