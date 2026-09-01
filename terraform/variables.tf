@@ -103,13 +103,3 @@ variable "tags" {
     ManagedBy   = "terraform"
   }
 }
-
-output "monitoring_url" {
-  description = "Grafana"
-  value       = "http://${module.monitoring_server.public_ip}:3000"
-}
-
-output "prometheus_url" {
-  description = "Prometheus. No authentication of its own; the security group is the control."
-  value       = "http://${module.monitoring_server.public_ip}:9090"
-}

@@ -1,67 +1,107 @@
 {
   "uid": "weather-app-obs",
   "title": "Weather App \u2014 Observability",
-  "description": "Golden signals for the Flask app, plus host, container and proxy metrics. Provisioned from JSON in the observability repository.",
   "tags": [
     "weather-app",
-    "observability",
-    "prometheus"
+    "lab"
   ],
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 1,
+  "editable": true,
   "refresh": "30s",
   "time": {
     "from": "now-1h",
     "to": "now"
   },
-  "timepicker": {
-    "refresh_intervals": [
-      "10s",
-      "30s",
-      "1m",
-      "5m",
-      "15m",
-      "1h"
-    ]
-  },
-  "editable": true,
-  "graphTooltip": 1,
-  "annotations": {
-    "list": []
-  },
-  "templating": {
-    "list": []
-  },
   "panels": [
     {
+      "id": 1,
       "type": "row",
-      "title": "Golden signals \u2014 the three the project requires",
+      "title": "Application",
+      "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
         "y": 0
       },
-      "collapsed": false,
-      "panels": [],
-      "id": 1
+      "panels": []
     },
     {
+      "id": 2,
       "type": "stat",
-      "title": "Requests / sec",
-      "description": "Per-second request rate over a 5-minute window. A counter is never graphed directly \u2014 rate() turns it into a rate.",
+      "title": "Error rate",
+      "description": "5xx responses as a share of all requests. The alert threshold is 5%. `or vector(0)` makes an absent 5xx series read as zero rather than No data.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 4,
+        "h": 5,
         "w": 6,
         "x": 0,
         "y": 1
       },
-      "id": 2,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum(rate(flask_http_request_total{status=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(flask_http_request_total[5m])), 0.0001)",
+          "legendFormat": "5xx share",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Requests / sec",
+      "description": "Throughput. rate() over a counter, averaged across 5 minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
       "targets": [
         {
           "datasource": {
@@ -69,31 +109,13 @@
             "uid": "prometheus"
           },
           "expr": "sum(rate(flask_http_request_total[5m]))",
-          "legendFormat": "",
-          "refId": "A",
-          "range": true,
-          "editorMode": "code"
+          "legendFormat": "req/s",
+          "refId": "A"
         }
       ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "orientation": "auto",
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto"
-      },
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
-          "decimals": 2,
-          "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -105,36 +127,7 @@
           }
         },
         "overrides": []
-      }
-    },
-    {
-      "type": "stat",
-      "title": "Error rate",
-      "description": "5xx as a share of all requests. Turns red at the 5% alert threshold. clamp_min avoids a divide-by-zero when idle.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
       },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 1
-      },
-      "id": 3,
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "(sum(rate(flask_http_request_total{status=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(flask_http_request_total[5m])), 0.0001)",
-          "legendFormat": "",
-          "refId": "A",
-          "range": true,
-          "editorMode": "code"
-        }
-      ],
       "options": {
         "reduceOptions": {
           "calcs": [
@@ -143,211 +136,49 @@
           "fields": "",
           "values": false
         },
-        "orientation": "auto",
-        "textMode": "auto",
-        "colorMode": "value",
         "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
         "justifyMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "decimals": 2,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "#EAB839",
-                "value": 0.01
-              },
-              {
-                "color": "red",
-                "value": 0.05
-              }
-            ]
-          }
-        },
-        "overrides": []
       }
     },
     {
-      "type": "stat",
-      "title": "Latency p95",
-      "description": "95% of requests were faster than this. An average would hide the slow tail.",
+      "id": 4,
+      "type": "timeseries",
+      "title": "Requests per second by status",
+      "description": "Splitting by status separates healthy traffic from 4xx and 5xx.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 4,
-        "w": 6,
+        "h": 5,
+        "w": 12,
         "x": 12,
         "y": 1
       },
-      "id": 4,
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum(rate(flask_http_request_duration_seconds_bucket[5m])) by (le))",
-          "legendFormat": "",
-          "refId": "A",
-          "range": true,
-          "editorMode": "code"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "orientation": "auto",
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "decimals": 2,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "#EAB839",
-                "value": 0.5
-              },
-              {
-                "color": "red",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "stat",
-      "title": "Targets up",
-      "description": "How many scrape targets are answering. up==0 is itself a metric.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 1
-      },
-      "id": 5,
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(up)",
-          "legendFormat": "",
-          "refId": "A",
-          "range": true,
-          "editorMode": "code"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "orientation": "auto",
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 2,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "row",
-      "title": "Traffic and errors",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 5
-      },
-      "collapsed": false,
-      "panels": [],
-      "id": 6
-    },
-    {
-      "type": "timeseries",
-      "title": "Requests per second by status",
-      "description": "Split by HTTP status so a rise in 4xx/5xx is visible against total traffic.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 6
-      },
-      "id": 7,
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by (status) (rate(flask_http_request_total[5m]))",
+          "expr": "sum(rate(flask_http_request_total[5m])) by (status)",
           "legendFormat": "{{status}}",
-          "refId": "A",
-          "range": true,
-          "editorMode": "code"
+          "refId": "A"
         }
       ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "legend": {
           "displayMode": "table",
@@ -355,143 +186,29 @@
           "calcs": [
             "mean",
             "max"
-          ],
-          "showLegend": true
+          ]
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": true,
-            "axisLabel": "",
-            "gradientMode": "opacity"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "mappings": []
-        },
-        "overrides": []
       }
     },
     {
+      "id": 5,
       "type": "timeseries",
-      "title": "Error rate (5xx share)",
-      "description": "The alert fires when this stays above the red line for 2 minutes.",
+      "title": "Request latency percentiles",
+      "description": "Percentiles, not the average: an average hides the slow tail that users actually feel. The alert fires on p95 above 1s.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 8,
+        "h": 7,
         "w": 12,
-        "x": 12,
+        "x": 0,
         "y": 6
       },
-      "id": 8,
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "(sum(rate(flask_http_request_total{status=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(flask_http_request_total[5m])), 0.0001)",
-          "legendFormat": "error rate",
-          "refId": "A",
-          "range": true,
-          "editorMode": "code"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": [],
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": true,
-            "axisLabel": "",
-            "gradientMode": "opacity",
-            "thresholdsStyle": {
-              "mode": "line"
-            }
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 0.05
-              }
-            ]
-          },
-          "mappings": [],
-          "max": 1,
-          "min": 0
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "row",
-      "title": "Latency",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 14
-      },
-      "collapsed": false,
-      "panels": [],
-      "id": 9
-    },
-    {
-      "type": "timeseries",
-      "title": "Request duration percentiles",
-      "description": "by (le) is mandatory \u2014 le is the histogram bucket boundary label, and histogram_quantile needs it.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 15
-      },
-      "id": 10,
       "targets": [
         {
           "datasource": {
@@ -500,9 +217,7 @@
           },
           "expr": "histogram_quantile(0.50, sum(rate(flask_http_request_duration_seconds_bucket[5m])) by (le))",
           "legendFormat": "p50",
-          "refId": "A",
-          "range": true,
-          "editorMode": "code"
+          "refId": "A"
         },
         {
           "datasource": {
@@ -511,9 +226,7 @@
           },
           "expr": "histogram_quantile(0.95, sum(rate(flask_http_request_duration_seconds_bucket[5m])) by (le))",
           "legendFormat": "p95",
-          "refId": "B",
-          "range": true,
-          "editorMode": "code"
+          "refId": "B"
         },
         {
           "datasource": {
@@ -522,11 +235,20 @@
           },
           "expr": "histogram_quantile(0.99, sum(rate(flask_http_request_duration_seconds_bucket[5m])) by (le))",
           "legendFormat": "p99",
-          "refId": "C",
-          "range": true,
-          "editorMode": "code"
+          "refId": "C"
         }
       ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "legend": {
           "displayMode": "table",
@@ -534,123 +256,91 @@
           "calcs": [
             "mean",
             "max"
-          ],
-          "showLegend": true
+          ]
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": true,
-            "axisLabel": "",
-            "gradientMode": "opacity"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "mappings": []
-        },
-        "overrides": []
       }
     },
     {
-      "type": "timeseries",
-      "title": "Slowest endpoints (p95 by path)",
-      "description": "Which route is slow, not just that something is.",
+      "id": 6,
+      "type": "stat",
+      "title": "Targets up",
+      "description": "How many scrape targets are responding. Expect 6. A drop means an exporter has stopped or a security group changed.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 8,
+        "h": 7,
         "w": 12,
         "x": 12,
-        "y": 15
+        "y": 6
       },
-      "id": 11,
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "topk(5, histogram_quantile(0.95, sum by (le, path) (rate(flask_http_request_duration_seconds_bucket[5m]))))",
-          "legendFormat": "{{path}}",
-          "refId": "A",
-          "range": true,
-          "editorMode": "code"
+          "expr": "sum(up)",
+          "legendFormat": "targets",
+          "refId": "A"
         }
       ],
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": [],
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": true,
-            "axisLabel": "",
-            "gradientMode": "opacity"
-          },
+          "unit": "short",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": null
+              },
+              {
+                "color": "green",
+                "value": 6
               }
             ]
-          },
-          "mappings": []
+          }
         },
         "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto"
       }
     },
     {
+      "id": 7,
       "type": "row",
-      "title": "Hosts \u2014 node_exporter",
+      "title": "Hosts",
+      "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 13
       },
-      "collapsed": false,
-      "panels": [],
-      "id": 12
+      "panels": []
     },
     {
+      "id": 8,
       "type": "timeseries",
       "title": "CPU used %",
-      "description": "100 minus the idle rate, averaged across cores.",
+      "description": "Derived from idle time: 100 minus the idle share is what is in use.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -659,9 +349,8 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 24
+        "y": 14
       },
-      "id": 13,
       "targets": [
         {
           "datasource": {
@@ -670,55 +359,40 @@
           },
           "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
           "legendFormat": "{{instance}}",
-          "refId": "A",
-          "range": true,
-          "editorMode": "code"
+          "refId": "A"
         }
       ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "legend": {
-          "displayMode": "list",
+          "displayMode": "table",
           "placement": "bottom",
-          "calcs": [],
-          "showLegend": true
+          "calcs": [
+            "mean",
+            "max"
+          ]
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": true,
-            "axisLabel": "",
-            "gradientMode": "opacity"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [],
-          "max": 100,
-          "min": 0
-        },
-        "overrides": []
       }
     },
     {
+      "id": 9,
       "type": "timeseries",
       "title": "Memory used %",
-      "description": "MemAvailable, not MemFree \u2014 Linux uses free RAM as reclaimable page cache.",
+      "description": "MemAvailable, not MemFree: Linux uses free memory for cache, so MemFree understates what an application could actually claim.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -727,9 +401,8 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 24
+        "y": 14
       },
-      "id": 14,
       "targets": [
         {
           "datasource": {
@@ -738,55 +411,40 @@
           },
           "expr": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)",
           "legendFormat": "{{instance}}",
-          "refId": "A",
-          "range": true,
-          "editorMode": "code"
+          "refId": "A"
         }
       ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "legend": {
-          "displayMode": "list",
+          "displayMode": "table",
           "placement": "bottom",
-          "calcs": [],
-          "showLegend": true
+          "calcs": [
+            "mean",
+            "max"
+          ]
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": true,
-            "axisLabel": "",
-            "gradientMode": "opacity"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [],
-          "max": 100,
-          "min": 0
-        },
-        "overrides": []
       }
     },
     {
+      "id": 10,
       "type": "timeseries",
       "title": "Root disk used %",
-      "description": "The Jenkins host fills fastest \u2014 every build leaves an image behind.",
+      "description": "Root filesystem only. Docker images and logs are the usual cause of growth.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -795,361 +453,43 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 24
+        "y": 14
       },
-      "id": 15,
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\",fstype!=\"tmpfs\"} / node_filesystem_size_bytes{mountpoint=\"/\",fstype!=\"tmpfs\"})",
+          "expr": "100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"})",
           "legendFormat": "{{instance}}",
-          "refId": "A",
-          "range": true,
-          "editorMode": "code"
+          "refId": "A"
         }
       ],
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": [],
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
           "custom": {
-            "drawStyle": "line",
             "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": true,
-            "axisLabel": "",
-            "gradientMode": "opacity"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [],
-          "max": 100,
-          "min": 0
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
         },
         "overrides": []
-      }
-    },
-    {
-      "type": "row",
-      "title": "Containers \u2014 cAdvisor",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 31
       },
-      "collapsed": false,
-      "panels": [],
-      "id": 16
-    },
-    {
-      "type": "timeseries",
-      "title": "Container CPU cores",
-      "description": "Cores consumed per container. This is what tells you WHICH container is busy.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 32
-      },
-      "id": 17,
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{name!=\"\"}[5m]))",
-          "legendFormat": "{{name}}",
-          "refId": "A",
-          "range": true,
-          "editorMode": "code"
-        }
-      ],
       "options": {
         "legend": {
-          "displayMode": "list",
+          "displayMode": "table",
           "placement": "bottom",
-          "calcs": [],
-          "showLegend": true
+          "calcs": [
+            "mean",
+            "max"
+          ]
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": true,
-            "axisLabel": "",
-            "gradientMode": "opacity"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "mappings": []
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "timeseries",
-      "title": "Container memory",
-      "description": "Working set \u2014 the memory that cannot be reclaimed under pressure.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 12,
-        "y": 32
-      },
-      "id": 18,
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by (name) (container_memory_working_set_bytes{name!=\"\"})",
-          "legendFormat": "{{name}}",
-          "refId": "A",
-          "range": true,
-          "editorMode": "code"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": [],
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": true,
-            "axisLabel": "",
-            "gradientMode": "opacity"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "mappings": []
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "row",
-      "title": "nginx and scrape health",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 39
-      },
-      "collapsed": false,
-      "panels": [],
-      "id": 19
-    },
-    {
-      "type": "timeseries",
-      "title": "nginx active connections",
-      "description": "From stub_status via nginx-prometheus-exporter.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 40
-      },
-      "id": 20,
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "nginx_connections_active",
-          "legendFormat": "active",
-          "refId": "A",
-          "range": true,
-          "editorMode": "code"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "rate(nginx_http_requests_total[5m])",
-          "legendFormat": "requests/sec",
-          "refId": "B",
-          "range": true,
-          "editorMode": "code"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": [],
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": true,
-            "axisLabel": "",
-            "gradientMode": "opacity"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "mappings": []
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "timeseries",
-      "title": "Scrape duration by job",
-      "description": "Prometheus monitoring itself. A rising scrape duration is an early warning.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 12,
-        "y": 40
-      },
-      "id": 21,
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "scrape_duration_seconds",
-          "legendFormat": "{{job}} \u2014 {{instance}}",
-          "refId": "A",
-          "range": true,
-          "editorMode": "code"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": [],
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": true,
-            "axisLabel": "",
-            "gradientMode": "opacity"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "mappings": []
-        },
-        "overrides": []
       }
     }
   ]

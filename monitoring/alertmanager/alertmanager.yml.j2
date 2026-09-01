@@ -47,11 +47,3 @@ receivers:
           {{ .Annotations.description }}
           Severity: `{{ .Labels.severity }}` — Instance: `{{ .Labels.instance }}`
           {{ end }}{% endraw %}
-
-# Suppress a downstream alert when a more fundamental one is already firing.
-# If the whole host is unreachable, TargetDown is the useful signal; AppDown is
-# noise that tells you nothing extra.
-inhibit_rules:
-  - source_matchers: ['alertname = TargetDown']
-    target_matchers: ['alertname = AppDown']
-    equal: ["instance"]

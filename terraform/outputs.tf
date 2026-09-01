@@ -8,11 +8,16 @@ output "monitoring_private_ip" {
   value       = module.monitoring_server.private_ip
 }
 
+
 output "monitoring_url" {
-  description = "nginx entry point. /prometheus and /grafana live behind basic auth."
-  value       = "http://${module.monitoring_server.public_ip}"
+  description = "Grafana"
+  value       = "http://${module.monitoring_server.public_ip}:3000"
 }
 
+output "prometheus_url" {
+  description = "Prometheus. No authentication of its own; the security group is the control."
+  value       = "http://${module.monitoring_server.public_ip}:9090"
+}
 output "ssh_monitoring" {
   description = "Ready-to-paste SSH command (uses the CI/CD stack's key)"
   value       = "ssh -i ../../jenkins-cicd-lab/terraform/cicd-key.pem ec2-user@${module.monitoring_server.public_ip}"
