@@ -13,17 +13,17 @@ module "monitoring_sg" {
       ip_protocol = "tcp"
       cidr_ipv4   = local.admin_cidr
     },
-    {
-      description = "nginx to Grafana. Grafana has its own login."
-      from_port   = 80
-      to_port     = 80
+        {
+      description = "Grafana UI. Grafana has its own login."
+      from_port   = 3000
+      to_port     = 3000
       ip_protocol = "tcp"
       cidr_ipv4   = local.admin_cidr
     },
     {
-      description = "nginx to Prometheus, protected by HTTP basic auth"
-      from_port   = 8090
-      to_port     = 8090
+      description = "Prometheus UI. No auth of its own; access controlled here."
+      from_port   = 9090
+      to_port     = 9090
       ip_protocol = "tcp"
       cidr_ipv4   = local.admin_cidr
     },
