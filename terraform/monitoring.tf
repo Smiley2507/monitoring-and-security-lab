@@ -43,6 +43,7 @@ module "monitoring_server" {
   root_volume_size            = var.root_volume_size
   ami_name_filter             = var.ami_name_filter
   ami_owner                   = "amazon"
+  ami_id                      = var.ami_id
   iam_instance_profile = aws_iam_instance_profile.monitoring.name
   tags = {
     Role = "monitoring"

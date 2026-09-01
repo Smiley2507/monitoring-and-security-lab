@@ -61,21 +61,6 @@ scrape_configs:
     file_sd_configs:
       - files: ["/etc/prometheus/targets/weather-app.json"]
 
-  # --- containers -----------------------------------------------------------
-  # cAdvisor: per-container CPU, memory, network, filesystem. This is what
-  # tells you WHICH container is consuming a host's resources, where
-  # node_exporter only tells you that something is.
-  - job_name: cadvisor
-    file_sd_configs:
-      - files: ["/etc/prometheus/targets/cadvisor.json"]
-
-  # --- reverse proxy --------------------------------------------------------
-  # nginx stub_status via nginx-prometheus-exporter: connections accepted,
-  # handled, active, and total requests at the proxy layer.
-  - job_name: nginx
-    file_sd_configs:
-      - files: ["/etc/prometheus/targets/nginx.json"]
-
   # --- CI/CD ----------------------------------------------------------------
   # Requires the Prometheus metrics plugin installed in Jenkins. If the plugin
   # is absent this target simply shows DOWN; nothing else is affected.

@@ -7,14 +7,7 @@
   roles:
     - node_exporter
 
-# Play 2 — the app server also exposes container and nginx metrics.
-- name: Deploy exporters on the application server
-  hosts: role_app
-  become: true
-  roles:
-    - app_exporters
-
-# Play 3 — the monitoring stack itself.
+# Play 2 — the monitoring stack itself.
 - name: Deploy Prometheus, Grafana and the reverse proxy
   hosts: role_monitoring
   become: true

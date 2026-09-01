@@ -63,6 +63,19 @@ variable "ami_name_filter" {
   default     = "al2023-ami-2023.*-kernel-6.1-x86_64"
 }
 
+variable "ami_id" {
+  description = <<-EOT
+    Pinned AMI ID. The module falls back to a `data "aws_ami"` lookup with
+    most_recent = true, which is not idempotent over time: AWS publishes new
+    AL2023 images regularly, and the moment one appears the plan wants to
+    REPLACE every instance, destroying Jenkins' job history and changing every
+    public IP. Pinning means a plan reflects my changes, not AWS's release
+    schedule. Bump this deliberately when you want to move.
+  EOT
+  type        = string
+  default     = "ami-0b9b7988c01535dd6"
+}
+
 variable "admin_cidr" {
   description = <<-EOT
     Who may reach SSH and the monitoring UIs. Leave null to detect your current

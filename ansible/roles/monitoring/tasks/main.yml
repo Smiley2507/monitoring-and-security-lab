@@ -56,8 +56,6 @@
   loop:
     - node
     - weather-app
-    - cadvisor
-    - nginx
     - jenkins
 
 # --- Grafana ----------------------------------------------------------------
@@ -186,7 +184,6 @@
     set -o pipefail
     echo "--- prometheus ---"; docker exec prometheus prometheus --version 2>&1 | head -1
     echo "--- grafana ---";    docker exec grafana grafana server -v 2>&1 | head -1
-    echo "--- cadvisor ---";   docker inspect --format '{{ '{{' }}.Config.Image{{ '}}' }}' cadvisor
     echo "--- docker ---";     docker --version
     echo "--- compose ---";    docker compose version
     echo "--- os ---";         head -2 /etc/os-release
