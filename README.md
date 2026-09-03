@@ -18,7 +18,7 @@ if it wasn't?"*
 - [Prerequisites](#prerequisites)
 - [Deploy](#deploy)
 - [Access](#access)
-- [Evidence](#evidence) — screenshots proving each capability
+- [Evidence](#evidence)
 - [Repository layout](#repository-layout)
 - [Design decisions](#design-decisions)
 - [Teardown](#teardown)
@@ -29,8 +29,8 @@ if it wasn't?"*
 
 | Layer | Tool | What it gives you |
 |-------|------|-------------------|
-| Metrics | Prometheus | Scrapes 9 targets every 15s, evaluates 9 alert rules |
-| Dashboards | Grafana | Latency, requests/sec, error rate, host and container health |
+| Metrics | Prometheus | Scrapes 6 targets every 15s, evaluates 4 alert rules |
+| Dashboards | Grafana | Latency, requests/sec, error rate, host health |
 | Notification | Alertmanager | Routes firing alerts to Discord |
 | Logs | CloudWatch Logs | Containers via the Docker `awslogs` driver, Jenkins via the CloudWatch agent |
 | Audit | CloudTrail | Multi-region trail into an encrypted, versioned S3 bucket with lifecycle rules |
@@ -38,25 +38,27 @@ if it wasn't?"*
 
 ### Scrape targets
 
+Six targets across four jobs.
+
 | Job | Target | Exposes |
 |-----|--------|---------|
 | `prometheus` | itself | scrape durations, TSDB size, rule failures |
 | `node` | all 3 hosts | CPU, memory, disk, load, network |
 | `weather-app` | app server `/metrics` | request counts, durations, status codes |
-| `cadvisor` | app + monitoring | per-container CPU and memory |
-| `nginx` | app server `:9113` | active connections, requests/sec |
 | `jenkins` | Jenkins `/prometheus/` | build queue, executors, job durations |
 
 ### Alert rules
 
-Nine rules in three groups. The one the project requires is **HighErrorRate** —
+Four rules in two groups. The one the project requires is **HighErrorRate** —
 5xx responses above 5% of traffic, sustained for 2 minutes.
 
 | Group | Rules |
 |-------|-------|
 | weather-app | HighErrorRate, HighLatency, AppDown |
-| hosts | TargetDown, HighCpuUsage, HighMemoryUsage, LowDiskSpace, HostRebooted |
-| containers | ContainerRestarting |
+| hosts | HostDown |
+
+`AppDown` covers the `weather-app` job and `HostDown` covers the `node` job, so
+their scopes cannot overlap and one incident produces one notification.
 
 ---
 
@@ -69,15 +71,18 @@ already there.
 
 Solid lines are metrics being **pulled**; dashed lines are logs being **pushed**.
 The monitoring server scrapes the app server and the Jenkins server over the VPC
-(9100 / 8080 / 9113), and Alertmanager pushes notifications out to Discord.
-Independently, all three hosts push logs to CloudWatch Logs, CloudTrail delivers
-its own logs to an S3 bucket, and GuardDuty continuously analyses both. Nothing
-is pushed to Prometheus, which is why the security groups must let the
-monitoring host reach those three exporter ports inside the VPC.
+(9100 for node_exporter, 80 for the app, 8080 for Jenkins), and Alertmanager
+pushes notifications out to Discord. Independently, all three hosts push logs to
+CloudWatch Logs, CloudTrail delivers its own logs to an S3 bucket, and GuardDuty
+continuously analyses both.
 
-Grafana and Prometheus are never exposed directly. nginx proxies both, adds HTTP
-basic auth in front of Prometheus (which has no authentication of its own), and
-only the operator's IP can reach either port.
+Nothing is pushed to Prometheus, which is why the security groups must let the
+monitoring host reach those exporter ports inside the VPC. It is also why a
+target showing DOWN is more often a network rule than a broken exporter.
+
+Prometheus and Grafana publish their own ports, restricted by security group to
+the operator's IP. Prometheus has no authentication of its own, so access
+control is at the network layer; Grafana keeps its own login.
 
 ---
 
@@ -96,7 +101,7 @@ only the operator's IP can reach either port.
 
 ```bash
 cd terraform
-cp terraform.tfvars.example terraform.tfvars   # set your admin CIDR
+cp terraform.tfvars.example terraform.tfvars
 terraform init
 terraform apply
 ```
@@ -104,6 +109,10 @@ terraform apply
 Creates: the monitoring EC2 instance and its security group, an IAM instance
 profile for CloudWatch, the CloudTrail bucket and trail, the GuardDuty detector,
 and the CloudWatch log groups with 14-day retention.
+
+The security group allows SSH, 3000 and 9090 from `local.admin_cidr`, which is
+resolved from `checkip.amazonaws.com` at plan time. **Change networks and you
+lock yourself out until you re-apply.**
 
 **GuardDuty allows one detector per account per region.** If the account already
 has one, import it before applying or `terraform apply` will fail:
@@ -115,9 +124,9 @@ terraform import aws_guardduty_detector.main <detector-id>
 
 ### 2. Secrets
 
-The Discord webhook URL contains a token that grants the ability to post to the
-channel, so it is treated as a credential — kept out of git and out of Ansible's
-log output.
+The Discord webhook URL contains a token that grants posting rights to the
+channel, so it is treated as a credential — kept out of git, and out of
+Ansible's run output.
 
 ```bash
 cd ../ansible
@@ -127,11 +136,11 @@ echo 'alertmanager_discord_webhook: "https://discord.com/api/webhooks/..."' \
 ```
 
 `group_vars` files are named after **inventory groups**, not merged by filename.
-A file called `group_vars/secrets.yml` is loaded only if a group named `secrets`
+A file called `group_vars/secrets.yml` loads only if a group named `secrets`
 exists — otherwise Ansible ignores it silently and the `CHANGE-ME` placeholder
 reaches the host. Making `all` a directory means every file inside it loads for
-every host, so `all/main.yml` holds the committed defaults and
-`all/secrets.yml` (gitignored) holds the webhook.
+every host: `all/main.yml` holds committed defaults, `all/secrets.yml` (which is
+gitignored) holds the webhook.
 
 ### 3. Configuration
 
@@ -139,9 +148,9 @@ every host, so `all/main.yml` holds the committed defaults and
 ansible-playbook site.yml
 ```
 
-Three plays: node_exporter on all hosts, exporters on the app server, and the
-monitoring stack on the new host. Hosts come from the EC2 dynamic inventory and
-are grouped by their `Role` tag, so no IP is ever written down.
+Two plays: node_exporter on all hosts, then the monitoring stack on the new
+host. Hosts come from the EC2 dynamic inventory and are grouped by their `Role`
+tag, so no IP is ever written down.
 
 The run ends by reporting how many scrape targets are UP — the single most
 useful check in the whole playbook.
@@ -149,11 +158,12 @@ useful check in the whole playbook.
 ### 4. Verify
 
 ```bash
-# from the monitoring host
-curl -u prom:<password> http://localhost:8090/-/ready          # 200
-curl -s localhost:8090/api/v1/query?query=sum\(up\) | jq       # 9
+IP=$(cd ../terraform && terraform output -raw monitoring_public_ip)
 
-# from anywhere with the CLI
+curl -s "http://$IP:9090/-/ready"                                    # Prometheus OK
+curl -s "http://$IP:9090/api/v1/query?query=sum(up)" | grep -o '"value".*'   # 6
+curl -s -o /dev/null -w '%{http_code}\n' "http://$IP:3000/api/health"        # 200
+
 aws logs tail /weather-app/web --since 10m --profile sandbox-user --region eu-west-1
 aws logs tail /jenkins/system  --since 10m --profile sandbox-user --region eu-west-1
 ```
@@ -163,17 +173,17 @@ aws logs tail /jenkins/system  --since 10m --profile sandbox-user --region eu-we
 ## Access
 
 ```bash
-terraform output monitoring_url        # Grafana
-terraform output monitoring_public_ip  # Prometheus on :8090
+terraform output monitoring_url    # Grafana  :3000
+terraform output prometheus_url    # Prometheus :9090
 ```
 
 | URL | What | Auth |
 |-----|------|------|
-| `http://<ip>/` | Grafana dashboards | Grafana login |
-| `http://<ip>:8090/targets` | Scrape health — first place to look | basic auth |
-| `http://<ip>:8090/alerts` | Alert rules and their state | basic auth |
+| `http://<ip>:3000/` | Grafana dashboards | Grafana login |
+| `http://<ip>:9090/targets` | Scrape health — first place to look | none; security group |
+| `http://<ip>:9090/alerts` | Alert rules and their state | none; security group |
 
-Both ports are restricted to the operator's IP by security group.
+Both ports are restricted to the operator's IP.
 
 ---
 
@@ -187,7 +197,7 @@ evaluate them and notify, and everything is separately logged and audited.
 
 ![Prometheus targets](screenshots/prom-targets.png)
 
-All nine targets UP across six jobs. This is the single best proof that the
+All six targets UP across four jobs. This is the single best proof that the
 scrape path works end to end — security groups, exporters, and the app's own
 `/metrics` endpoint all have to be correct for this page to look like this.
 
@@ -200,29 +210,21 @@ A PromQL query graphing request rate by HTTP status. The visible 200, 400 and
 
 ![Grafana dashboard overview](screenshots/grafana-dash-1.png)
 
-The provisioned dashboard's overview row: throughput, latency and error rate —
-the three signals the project requires. Loaded from JSON in this repo rather
-than saved in the Grafana UI, so it survives a container rebuild.
+The Application row: error rate, requests per second, requests by status, and
+latency percentiles — the three signals the project requires, plus a count of
+targets up. Loaded from JSON in this repo rather than saved in the Grafana UI,
+so it survives a container rebuild.
 
-![Host and container health panels](screenshots/grafana-dash-2.png)
+![Host health panels](screenshots/grafana-dash-2.png)
 
-node_exporter and cAdvisor panels underneath the application row —
-infrastructure health alongside application health, on the same dashboard.
-
-![Scrape health panels](screenshots/grafana-dash-3.png)
-
-A per-target scrape health panel, so a broken exporter shows up in Grafana and
-not just in Prometheus's own `/targets` page.
+The Hosts row: CPU, memory and root disk across all three machines from
+node_exporter — infrastructure health alongside application health.
 
 ![Latency percentiles](screenshots/grafana-latency.png)
 
-p50/p95/p99 latency broken down by request path. Several of the paths visible
-here were never defined by the weather app — `/.aws/credentials`,
-`/.bash_history`, `/.env` and similar. That is automated internet
-reconnaissance probing a publicly reachable host for leaked secrets. All of it
-returned 404. This traffic was not staged; it is what any public host receives
-within hours, and it is the clearest practical argument for why the security
-half of this project exists.
+p50/p95/p99 latency. An average would hide the tail: ninety-nine fast requests
+and one very slow one average out to something that looks fine while a real user
+waited ten seconds. The alert fires on p95 above one second.
 
 ![Grafana data source](screenshots/grafana-data-sources.png)
 
@@ -232,34 +234,32 @@ Grafana's Prometheus data source, provisioned rather than clicked in.
 
 ![Alert rules](screenshots/prom-rules.png)
 
-All nine rules loaded, including the one the project requires,
-`HighErrorRate` (5xx above 5% of traffic, sustained 2 minutes).
-
-![Prometheus alert groups](screenshots/prom-alerts.png)
-
-The alert groups registered in Prometheus. Prometheus decides *when* an alert
-fires; Alertmanager decides *who* is told and *how*.
+All four rules loaded, including the one the project requires, `HighErrorRate`
+(5xx above 5% of traffic, sustained 2 minutes).
 
 ![Alert firing](screenshots/alert-firing.png)
 
-`TargetDown` actually reaching `FIRING (1)` after one of the exporters stopped
-responding — proof the evaluation path works end to end, not just that the
-rules parse. `HighErrorRate` runs through the same mechanism with a different
-expression.
+A rule firing under an induced outage. `HighErrorRate` uses the same evaluation
+mechanism with a different expression — a rule reaching FIRING here proves the
+whole path, not just that the rules parse.
 
 ### 4. ...and notify Discord
 
 ![Discord alert notification](screenshots/discord-notification.png)
 
-Alerts arriving in the `#alerts` Discord channel with severity and instance labels intact, and the matching RESOLVED notification once the service recovered. This closes the chain: rule evaluated in Prometheus, grouped and routed by Alertmanager, delivered to a human, and cleared automatically when the condition ended.
+The alert arriving in the `#alerts` Discord channel with its severity and
+instance labels intact, and the matching RESOLVED notification once the service
+recovered. This closes the chain: rule evaluated in Prometheus, grouped and
+routed by Alertmanager, delivered to a human, and cleared automatically when the
+condition ended.
 
 ### 5. Logs
 
 ![CloudWatch log groups](screenshots/cloudwatch-log-groups.png)
 
-Seven log groups, each with an explicit 14-day retention policy declared in
-Terraform — not auto-created by the Docker driver, which would keep (and bill
-for) the data forever.
+Log groups with an explicit 14-day retention policy declared in Terraform — not
+auto-created by the Docker driver, which would keep (and bill for) the data
+forever.
 
 ![CloudWatch application logs](screenshots/cloudwatch-app-logs.png)
 
@@ -273,9 +273,9 @@ The multi-region trail, with log file validation enabled.
 
 ![S3 bucket lifecycle policy](screenshots/cloudtrail-lifecycle-rule.png)
 
-The trail's destination bucket: encrypted, versioned, public access blocked,
-and a lifecycle policy moving objects to Infrequent Access at 30 days, Glacier
-IR at 90, and expiring them at 365.
+The trail's destination bucket: encrypted, versioned, public access blocked, and
+a lifecycle policy moving objects to Infrequent Access at 30 days, Glacier IR at
+90, and expiring them at 365.
 
 ![GuardDuty sample findings](screenshots/guardduty-findings.png)
 
@@ -289,70 +289,55 @@ display path end to end without waiting for a real incident.
 ## Repository layout
 
 ```
-monitoring-and-security-lab/
-├── terraform/
-│   ├── monitoring.tf            # monitoring EC2 instance + security group
-│   ├── iam.tf                   # instance profile for CloudWatch access
-│   ├── cloudtrail.tf            # multi-region trail + S3 bucket
-│   ├── guardduty.tf             # detector
-│   ├── cloudwatch.tf            # log groups, 14-day retention
-│   ├── data.tf                  # looks up the existing VPC/subnets by tag
-│   ├── outputs.tf
-│   └── terraform.tfvars         # gitignored — your admin CIDR
-├── ansible/
-│   ├── site.yml                 # entrypoint: 3 plays
-│   ├── inventory.aws_ec2.yml    # EC2 dynamic inventory, grouped by Role tag
-│   ├── group_vars/
-│   │   └── all/
-│   │       ├── main.yml         # committed defaults (CHANGE-ME placeholder)
-│   │       └── secrets.yml      # gitignored — Discord webhook
-│   └── roles/
-│       ├── docker/
-│       ├── node_exporter/       # installed on all 3 hosts
-│       ├── app_exporters/       # cAdvisor + nginx-exporter on the app server
-│       └── monitoring/          # Prometheus, Grafana, Alertmanager, cAdvisor
-├── monitoring/                  # source of truth — Ansible copies this, nothing is hand-configured
-│   ├── docker-compose.yml.j2
-│   ├── prometheus/
-│   │   ├── prometheus.yml
-│   │   └── rules/alerts.yml
-│   ├── alertmanager/
-│   │   └── alertmanager.yml.j2
-│   ├── grafana/provisioning/
-│   │   ├── datasources/prometheus.yml
-│   │   └── dashboards/
-│   │       ├── dashboards.yml
-│   │       └── weather-app-observability.json
-│   └── nginx/monitoring.conf.j2
-├── screenshots/                 # evidence referenced above
-├── docs/
-│   └── REPORT.md
-├── monitoring-lab-architecture.png
-└── README.md
+terraform/    monitoring host, IAM, CloudTrail + S3, GuardDuty, CloudWatch groups
+ansible/      roles: docker, node_exporter, monitoring
+monitoring/   docker-compose.yml, prometheus config and rules, Alertmanager
+              config, Grafana provisioning
+screenshots/  evidence
+monitoring-lab-architecture.png   architecture diagram (see Architecture)
 ```
 
-Everything under `monitoring/` is the source of truth. Ansible copies it to the
-host; nothing is configured by hand.
+Everything under `monitoring/` is the source of truth; Ansible copies it to
+`/opt/monitoring` on the host. Only two files are templated, because only two
+depend on runtime facts:
+
+- `prometheus/prometheus.yml.j2` — needs every host's private IP, from inventory
+- `ansible/roles/monitoring/templates/env.j2` — image tags, credentials, public IP
+
+Everything else is plain YAML, so the file you read in the repo is byte-for-byte
+the file running on the host.
 
 ---
 
 ## Design decisions
 
-**Two proxied ports rather than URL sub-paths.** Prometheus and Grafana both
-need extra configuration to serve under a prefix, and both fail in confusing
-ways when it is slightly wrong. Serving each at the root of its own port avoids
-the problem entirely.
+**Scope kept to what the requirements call for.** An earlier version added an
+nginx reverse proxy with basic auth, cAdvisor, nginx-exporter, nine alert rules
+and twenty-one dashboard panels. That was more machinery than a single-file
+Flask app needs, and complexity that cannot be explained is a liability rather
+than an asset. It was cut back to the stated requirements.
 
-**`/metrics` restricted to the VPC, not the internet.** The app's nginx allows
-`/metrics` only from the VPC CIDR, so Prometheus can scrape it and nobody else
-can. A side effect worth knowing: curling it *from the app server itself*
-returns **403**, because Docker's NAT rewrites host-local traffic to a bridge
-address that isn't in the allowed range. That is the allow-list working, not a
-fault — test from the monitoring host instead.
+**Network-layer access control, not basic auth.** Prometheus has no
+authentication of its own, so the security group restricts port 9090 to the
+operator's IP. The previous basic-auth proxy sent credentials in the clear over
+plain HTTP to anyone who could already reach the port — a weak control layered
+on a strong one. In production both ports would terminate TLS.
+
+**`/metrics` restricted to the VPC.** Metrics leak endpoint names, traffic
+volumes, error rates and version numbers, which is reconnaissance material. The
+app's nginx allows the VPC CIDR so Prometheus can scrape it and denies the rest.
+Side effect worth knowing: curling it *from the app server itself* returns 403,
+because Docker's NAT rewrites host-local traffic to a bridge address outside the
+allowed range. That is the rule working — test from the monitoring host.
 
 **IAM instance profile, not access keys.** Both hosts assume a role for
 CloudWatch access. No long-lived credentials exist anywhere in this repo or on
 any instance.
+
+**Compose is static; only `.env` is generated.** Docker Compose substitutes
+`${VAR}` from a `.env` file beside it, so `docker-compose.yml` is plain YAML and
+every deployment-specific value lives in one seven-line file. Templating the
+compose file itself meant the version in the repo was never the version running.
 
 **Directory bind mounts, not single files.** A single-file bind mount binds that
 file's *inode*. Ansible writes a temp file and renames it into place, creating a
@@ -361,19 +346,23 @@ a file that no longer exists. Mounting the directory makes Docker resolve the
 path on each open.
 
 **File modes account for container UIDs.** Containers share the host's numeric
-UID namespace but not its user names. nginx workers run as UID 101 and
-Alertmanager as UID 65534, so a config file at mode 0640 owned by `ec2-user`
-is unreadable to them — nginx answers 500 and Alertmanager crash-loops. Config
-files that containers read are mode 0644.
+UID namespace but not its user names. Alertmanager runs as UID 65534, so a
+config file at mode 0640 owned by `ec2-user` is unreadable to it and the
+container crash-loops. Config files that containers read are mode 0644.
 
 **Dashboards provisioned from JSON.** Saving a dashboard in the Grafana UI
 creates drift that disappears the next time the container is recreated. The JSON
 in this repo is authoritative.
 
-**Targets generated from inventory.** Addresses live in `targets/*.json`,
-written by Ansible from the EC2 dynamic inventory and re-read by Prometheus
-without a restart. Rebuild the infrastructure and one playbook run points it at
-the new IPs.
+**Targets generated from inventory.** Scrape addresses are rendered into
+`prometheus.yml` from the EC2 dynamic inventory when Ansible runs, so no IP is
+hand-written. Rebuild the infrastructure, run the playbook, and the addresses
+are correct again.
+
+**AMI pinned rather than resolved.** A `data "aws_ami"` lookup with
+`most_recent = true` re-resolves on every plan, so the day AWS publishes a new
+image Terraform wants to replace every instance. Pinning means a plan reflects
+intentional changes.
 
 ---
 
