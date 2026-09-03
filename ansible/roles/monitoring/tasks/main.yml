@@ -1,12 +1,4 @@
 ---
-# Deploys the monitoring stack: Prometheus, Grafana, cAdvisor and an nginx
-# reverse proxy, as one compose project under {{ monitoring_dir }}.
-#
-# Config files in monitoring/ at the repository root are the single source of
-# truth. This role copies the static ones and templates the two that depend on
-# runtime facts: the compose file (needs the host's public IP) and the
-# Prometheus target files (need every host's private IP).
-
 - name: Create the monitoring directory tree
   ansible.builtin.file:
     path: "{{ item }}"
@@ -18,15 +10,14 @@
     - "{{ monitoring_dir }}"
     - "{{ monitoring_dir }}/prometheus"
     - "{{ monitoring_dir }}/prometheus/rules"
-    - "{{ monitoring_dir }}/prometheus/targets"
     - "{{ monitoring_dir }}/grafana"
     - "{{ monitoring_dir }}/alertmanager"
 
 # --- Prometheus -------------------------------------------------------------
 
-- name: Ship the Prometheus configuration
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../monitoring/prometheus/prometheus.yml"
+- name: Template the Prometheus configuration
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../monitoring/prometheus/prometheus.yml.j2"
     dest: "{{ monitoring_dir }}/prometheus/prometheus.yml"
     owner: ec2-user
     group: ec2-user
@@ -42,21 +33,6 @@
     mode: "0644"
   notify: Reload Prometheus
 
-# The addresses, generated from the dynamic inventory. Prometheus watches this
-# directory and re-reads it automatically — no restart, no reload. Rebuild the
-# infrastructure and a single playbook run points it at the new IPs.
-- name: Generate the Prometheus target files from inventory
-  ansible.builtin.template:
-    src: "targets/{{ item }}.json.j2"
-    dest: "{{ monitoring_dir }}/prometheus/targets/{{ item }}.json"
-    owner: ec2-user
-    group: ec2-user
-    mode: "0644"
-  loop:
-    - node
-    - weather-app
-    - jenkins
-
 # --- Grafana ----------------------------------------------------------------
 
 - name: Ship the Grafana provisioning tree
@@ -68,25 +44,43 @@
     mode: "0644"
     directory_mode: "0755"
 
-- name: Template the Alertmanager configuration
-  ansible.builtin.template:
-    src: "{{ playbook_dir }}/../monitoring/alertmanager/alertmanager.yml.j2"
+# --- Alertmanager -----------------------------------------------------------
+
+- name: Ship the Alertmanager configuration
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../monitoring/alertmanager/alertmanager.yml"
     dest: "{{ monitoring_dir }}/alertmanager/alertmanager.yml"
     owner: ec2-user
     group: ec2-user
     mode: "0644"
-  # Contains the Discord webhook token — keep it out of the run output.
+
+
+- name: Write the Discord webhook URL
+  ansible.builtin.copy:
+    content: "{{ alertmanager_discord_webhook }}"
+    dest: "{{ monitoring_dir }}/alertmanager/webhook_url"
+    owner: ec2-user
+    group: ec2-user
+    mode: "0644"
   no_log: true
+
 # --- the stack --------------------------------------------------------------
 
-- name: Template the compose file
-  ansible.builtin.template:
-    src: "{{ playbook_dir }}/../monitoring/docker-compose.yml.j2"
+- name: Ship the compose file
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../monitoring/docker-compose.yml"
     dest: "{{ monitoring_dir }}/docker-compose.yml"
     owner: ec2-user
     group: ec2-user
     mode: "0644"
-  register: monitoring_compose
+
+- name: Template the environment file
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ monitoring_dir }}/.env"
+    owner: ec2-user
+    group: ec2-user
+    mode: "0644"
 
 - name: Pull images
   ansible.builtin.command:
@@ -122,6 +116,7 @@
   delay: 5
   until: grafana_ready is succeeded
 
+
 - name: Ask Prometheus how many targets are up
   ansible.builtin.uri:
     url: http://127.0.0.1:9090/api/v1/query?query=sum(up)
@@ -136,30 +131,13 @@
   ansible.builtin.debug:
     msg: >-
       Targets currently UP:
-      {{ targets_up.json.data.result[0].value[1] | default('0') }}.
-      Full detail at http://{{ ansible_host }}:8090/targets
-
-- name: Record versions for the tools-evidence screenshot
-  ansible.builtin.shell: |
-    set -o pipefail
-    echo "--- prometheus ---"; docker exec prometheus prometheus --version 2>&1 | head -1
-    echo "--- grafana ---";    docker exec grafana grafana server -v 2>&1 | head -1
-    echo "--- docker ---";     docker --version
-    echo "--- compose ---";    docker compose version
-    echo "--- os ---";         head -2 /etc/os-release
-  args:
-    executable: /bin/bash
-  register: tool_versions
-  changed_when: false
-
-- name: Print tool versions
-  ansible.builtin.debug:
-    msg: "{{ tool_versions.stdout_lines }}"
+      {{ targets_up.json.data.result[0].value[1] | default('0') }} of 6.
+      Full detail at http://{{ ansible_host }}:9090/targets
 
 - name: Print the access URLs
   ansible.builtin.debug:
     msg:
       - "Grafana:    http://{{ ansible_host }}:3000/  (login {{ grafana_admin_user }})"
-      - "Prometheus: http://{{ ansible_host }}:9090/  (basic auth {{ prometheus_basic_auth_user }})"
+      - "Prometheus: http://{{ ansible_host }}:9090/  (no auth; restricted by security group)"
       - "Alerts:     http://{{ ansible_host }}:9090/alerts"
       - "Targets:    http://{{ ansible_host }}:9090/targets"

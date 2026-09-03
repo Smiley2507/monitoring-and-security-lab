@@ -1,9 +1,4 @@
 ---
-# The monitoring host is created by this repository, so nothing has installed
-# Docker on it. The app and Jenkins hosts already have Docker from the CI/CD
-# repository's `common` role — this role is idempotent, so running it against
-# them would be harmless, but site.yml only applies it where it is needed.
-
 - name: Update all packages
   ansible.builtin.dnf:
     name: "*"
@@ -14,10 +9,7 @@
   delay: 10
   until: dnf_update is succeeded
 
-# NOTE: do NOT add `curl` here. Amazon Linux 2023 ships `curl-minimal`, which
-# already provides /usr/bin/curl. Requesting `curl` forces dnf to erase
-# curl-minimal, which it refuses to do implicitly, producing a several-hundred
-# line depsolve error.
+
 - name: Install baseline packages
   ansible.builtin.dnf:
     name:
@@ -44,8 +36,7 @@
     state: directory
     mode: "0755"
 
-# AL2023 ships the Docker engine but not the Compose v2 plugin, so it comes
-# from the upstream release rather than from dnf.
+
 - name: Install the Docker Compose v2 plugin
   ansible.builtin.get_url:
     url: >-
