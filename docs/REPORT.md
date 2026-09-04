@@ -2,8 +2,6 @@
 
 Monitoring a containerised Flask application on AWS with Prometheus, Grafana, CloudWatch, CloudTrail and GuardDuty.
 
-Celse Mizeromahire, AmaliTech, region eu-west-1
-
 ---
 
 ## 1. Objective
