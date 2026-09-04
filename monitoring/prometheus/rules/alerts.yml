@@ -13,7 +13,7 @@ groups:
             sum(rate(flask_http_request_total[5m]))
           ) > 0.05
           and
-          sum(rate(flask_http_request_total[5m])) > 0.05
+          sum(rate(flask_http_request_total[5m])) > 0.01
         for: 10m
         labels:
           severity: critical

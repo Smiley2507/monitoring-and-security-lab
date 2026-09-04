@@ -21,4 +21,6 @@ receivers:
           {{ range .Alerts }}**{{ .Annotations.summary }}**
           {{ .Annotations.description }}
           Severity: `{{ .Labels.severity }}` — Instance: `{{ .Labels.instance }}`
+
+          [Traces](http://108.129.218.59:16686/search?service=weather-app&tags=%7B%22error%22%3A%22true%22%7D) · [Dashboard](http://108.129.218.59:3000/d/weather-app-obs) · [Alert](http://108.129.218.59:9090/alerts)
           {{ end }}

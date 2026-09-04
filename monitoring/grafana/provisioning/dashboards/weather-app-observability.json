@@ -268,7 +268,7 @@
       "id": 6,
       "type": "stat",
       "title": "Targets up",
-      "description": "How many scrape targets are responding. Expect 6. A drop means an exporter has stopped or a security group changed.",
+      "description": "How many scrape targets are responding. Expect 7. A drop means an exporter stopped or a security group changed.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -302,7 +302,7 @@
               },
               {
                 "color": "green",
-                "value": 6
+                "value": 7
               }
             ]
           }
@@ -491,6 +491,119 @@
           "sort": "desc"
         }
       }
+    },
+    {
+      "id": 20,
+      "type": "row",
+      "title": "Traces",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "panels": []
+    },
+    {
+      "id": 21,
+      "type": "table",
+      "title": "Slowest traces (over 300ms)",
+      "description": "Traces slower than the alert threshold, newest first. This is the jump from symptom to cause: a latency alert names a time window, these are the individual requests inside it. Click a trace ID to open the span tree in Jaeger.",
+      "datasource": {
+        "type": "jaeger",
+        "uid": "jaeger"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "jaeger",
+            "uid": "jaeger"
+          },
+          "queryType": "search",
+          "service": "weather-app",
+          "operation": "",
+          "tags": "",
+          "minDuration": "300ms",
+          "limit": 20,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 22,
+      "type": "table",
+      "title": "Traces with errors",
+      "description": "Traces whose spans carry error=true, which OpenTelemetry sets on a 5xx response. Open one and the span tree shows which call failed; its trace_id matches the JSON log lines in CloudWatch.",
+      "datasource": {
+        "type": "jaeger",
+        "uid": "jaeger"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "jaeger",
+            "uid": "jaeger"
+          },
+          "queryType": "search",
+          "service": "weather-app",
+          "operation": "",
+          "tags": "error=true",
+          "limit": 20,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 23,
+      "type": "text",
+      "title": "Alert to trace to log",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**1. Alert** fires in Discord with the rule name and value.  \n**2. Trace** \u2014 find the offending request in the tables above, or in [Jaeger](/explore), filtered to the alert's time window.  \n**3. Log** \u2014 copy the `trace_id` from the trace and search CloudWatch:  \n`aws logs filter-log-events --log-group-name /weather-app/web --filter-pattern '\"<trace_id>\"'`  \n\nMetrics carry no trace ID by design: a metric is an aggregate, and a per-request label would create one series per request. The join runs metric to time window to trace to log."
+      }
+    }
+  ],
+  "links": [
+    {
+      "title": "Jaeger",
+      "type": "link",
+      "icon": "external link",
+      "url": "http://${__url_time_range}",
+      "targetBlank": true,
+      "tooltip": "Open Jaeger to search traces"
     }
   ]
 }
