@@ -1,22 +1,14 @@
 ---
-# Provisioned at container start, so Grafana needs no manual "Add data source"
-# step and the configuration is version controlled.
 apiVersion: 1
 
 datasources:
   - name: Prometheus
     type: prometheus
-    # A FIXED uid, because the dashboard JSON references it. Without this
-    # Grafana generates a random uid and every dashboard panel shows
-    # "Datasource not found".
     uid: prometheus
     access: proxy
-    # Container-to-container over the compose network, not the public IP.
     url: http://prometheus:9090
     isDefault: true
     editable: false
     jsonData:
-      # Should match Prometheus' scrape_interval so Grafana picks sensible
-      # default step sizes.
       timeInterval: 15s
       httpMethod: POST

@@ -70,6 +70,35 @@ services:
         awslogs-stream: alertmanager
         awslogs-create-group: "true"
 
+# Replaces the v1 jaeger service in monitoring/docker-compose.yml
+
+  jaeger:
+    image: ${JAEGER_IMAGE}
+    container_name: jaeger
+    restart: unless-stopped
+    ports:
+      # Jaeger UI. Restricted to the admin IP by security group -- Jaeger has
+      # no authentication of its own, exactly like Prometheus.
+      - "16686:16686"
+      # OTLP over HTTP: where the app pushes spans. VPC only.
+      - "4318:4318"
+    volumes:
+      # Config directory, not the file: a single-file bind mount binds the
+      # inode, and Ansible's atomic rename would leave the container reading a
+      # file that no longer exists.
+      - ./jaeger:/jaeger:ro
+      # Badger storage. Bind mount rather than a named volume, because Docker
+      # creates named volumes owned by root and this image runs as uid 10001.
+      - ./jaeger-data:/badger
+    command: ["--config", "/jaeger/config.yaml"]
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION}
+        awslogs-group: /monitoring/jaeger
+        awslogs-stream: jaeger
+        awslogs-create-group: "true"
+
 volumes:
   prometheus_data:
   grafana_data:

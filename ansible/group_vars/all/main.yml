@@ -30,3 +30,7 @@ aws_region: eu-west-1
 # and this task runs with no_log.
 alertmanager_image: "prom/alertmanager:v0.28.0"
 alertmanager_discord_webhook: "CHANGE-ME"
+
+#-- Jaeger image. The all-in-one image is fine for a lab, but production would
+#   use a more robust deployment with a storage backend. 
+jaeger_image: "jaegertracing/jaeger:2.20.0"

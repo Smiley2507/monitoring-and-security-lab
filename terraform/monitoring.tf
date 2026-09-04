@@ -27,6 +27,20 @@ module "monitoring_sg" {
       ip_protocol = "tcp"
       cidr_ipv4   = local.admin_cidr
     },
+    {
+      description = "Jaeger UI. No auth of its own; access controlled here."
+      from_port   = 16686
+      to_port     = 16686
+      ip_protocol = "tcp"
+      cidr_ipv4   = local.admin_cidr
+    },
+    {
+      description = "OTLP HTTP span ingest from the app. VPC only."
+      from_port   = 4318
+      to_port     = 4318
+      ip_protocol = "tcp"
+      cidr_ipv4   = local.vpc_cidr
+    },
 
   ]
 }

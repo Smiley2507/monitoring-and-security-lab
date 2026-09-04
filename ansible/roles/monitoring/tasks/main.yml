@@ -12,6 +12,7 @@
     - "{{ monitoring_dir }}/prometheus/rules"
     - "{{ monitoring_dir }}/grafana"
     - "{{ monitoring_dir }}/alertmanager"
+    - "{{ monitoring_dir }}/jaeger"
 
 # --- Prometheus -------------------------------------------------------------
 
@@ -64,6 +65,21 @@
     mode: "0644"
   no_log: true
 
+- name: Create the Jaeger storage directory with container-matching ownership
+  ansible.builtin.file:
+    path: "{{ monitoring_dir }}/jaeger-data"
+    state: directory
+    owner: "10001"
+    group: "10001"
+    mode: "0755"
+
+- name: Ship the Jaeger configuration
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../monitoring/jaeger/config.yaml"
+    dest: "{{ monitoring_dir }}/jaeger/config.yaml"
+    owner: ec2-user
+    group: ec2-user
+    mode: "0644"
 # --- the stack --------------------------------------------------------------
 
 - name: Ship the compose file

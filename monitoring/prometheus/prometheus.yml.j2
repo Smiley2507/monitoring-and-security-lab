@@ -45,3 +45,9 @@ scrape_configs:
         labels:
           instance: "{{ host }}"
 {% endfor %}
+
+  - job_name: jaeger
+    static_configs:
+      - targets: ["jaeger:8888"]
+        labels:
+          instance: "obs-monitoring-server"
